@@ -1,7 +1,23 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { MORSE_TABLE, REVERSE_TABLE, textToMorse, morseToText } from '../utils/morse-code'
-import type { TrainMode, HistoryEntry } from '../types'
+import type { TrainMode, QuizType, HistoryEntry, ScoreRecord } from '../types'
+
+const WORD_BANK = [
+  'HELLO', 'WORLD', 'MORSE', 'CODE', 'RADIO', 'SIGNAL',
+  'SOS', 'HELP', 'OVER', 'OUT', 'COPY', 'ROGER',
+  'ALPHA', 'BRAVO', 'DELTA', 'ECHO', 'GOLF', 'HOTEL',
+  'INDIA', 'LIMA', 'OSCAR', 'ROMEO', 'SIERRA', 'TANGO',
+  'VICTOR', 'WHISKEY', 'YANKEE', 'ZULU',
+  'CQ', 'QRZ', 'QRM', 'QRN', 'QTH', 'QSL',
+  'ANTENNA', 'BEACON', 'CALLSIGN', 'FREQUENCY',
+  'TRANSMIT', 'RECEIVE', 'STATION', 'CONTACT',
+  'NIGHT', 'DAY', 'SUN', 'MOON', 'STAR', 'FIRE',
+  'WATER', 'EARTH', 'WIND', 'RAIN', 'SNOW', 'STORM',
+  'SHIP', 'BOAT', 'PLANE', 'TRAIN', 'CAR', 'BIKE',
+  'NORTH', 'SOUTH', 'EAST', 'WEST',
+  'ATTACK', 'RETREAT', 'ADVANCE', 'DEFEND',
+]
 
 export const useMorseStore = defineStore('morse', () => {
   const inputText = ref('')
@@ -11,15 +27,22 @@ export const useMorseStore = defineStore('morse', () => {
   const frequency = ref(700)
   const volume = ref(0.6)
   const trainMode = ref<TrainMode>('charToCode')
+  const quizType = ref<QuizType>('char')
   const history = ref<HistoryEntry[]>([])
   const quizChar = ref('')
   const userAnswer = ref('')
-  const score = ref({ correct: 0, total: 0 })
+  const charScore = ref<ScoreRecord>({ correct: 0, total: 0 })
+  const wordScore = ref<ScoreRecord>({ correct: 0, total: 0 })
   const isPlaying = ref(false)
   let audioCtx: AudioContext | null = null
   let currentOscillator: OscillatorNode | null = null
 
   const dotDuration = computed(() => 1200 / wpm.value)
+
+  const score = computed<ScoreRecord>(() => ({
+    correct: charScore.value.correct + wordScore.value.correct,
+    total: charScore.value.total + wordScore.value.total,
+  }))
 
   function getAudioCtx(): AudioContext {
     if (!audioCtx) audioCtx = new AudioContext()
@@ -69,31 +92,54 @@ export const useMorseStore = defineStore('morse', () => {
   }
 
   function generateQuiz() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-    quizChar.value = chars[Math.floor(Math.random() * chars.length)]
+    if (quizType.value === 'char') {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+      quizChar.value = chars[Math.floor(Math.random() * chars.length)]
+    } else {
+      quizChar.value = WORD_BANK[Math.floor(Math.random() * WORD_BANK.length)]
+    }
     userAnswer.value = ''
   }
 
   function checkAnswer() {
-    const correct = userAnswer.value.trim() === MORSE_TABLE[quizChar.value]
-    score.value.total++
-    if (correct) score.value.correct++
+    let correct: boolean
+    const expected = textToMorse(quizChar.value)
+    if (quizType.value === 'char') {
+      correct = userAnswer.value.trim() === MORSE_TABLE[quizChar.value]
+    } else {
+      correct = userAnswer.value.trim() === expected
+    }
+    if (quizType.value === 'char') {
+      charScore.value.total++
+      if (correct) charScore.value.correct++
+    } else {
+      wordScore.value.total++
+      if (correct) wordScore.value.correct++
+    }
     history.value.unshift({
       id: Date.now(), input: quizChar.value, output: userAnswer.value,
-      correct, timestamp: Date.now()
+      correct, timestamp: Date.now(), quizType: quizType.value
     })
     generateQuiz()
   }
 
   function resetScore() {
-    score.value = { correct: 0, total: 0 }
+    charScore.value = { correct: 0, total: 0 }
+    wordScore.value = { correct: 0, total: 0 }
     history.value = []
+  }
+
+  function setQuizType(type: QuizType) {
+    quizType.value = type
+    quizChar.value = ''
+    userAnswer.value = ''
   }
 
   return {
     inputText, morseOutput, decodedText, wpm, frequency, volume,
-    trainMode, history, quizChar, userAnswer, score, isPlaying,
+    trainMode, quizType, history, quizChar, userAnswer,
+    charScore, wordScore, score, isPlaying,
     dotDuration, encode, decode, playMorse, playTone,
-    generateQuiz, checkAnswer, resetScore
+    generateQuiz, checkAnswer, resetScore, setQuizType
   }
 })
